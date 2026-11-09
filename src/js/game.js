@@ -12,6 +12,7 @@ const OPPOSITE = { left: 'right', right: 'left', up: 'down', down: 'up' };
 
 const PACMAN_SPEED = 0.125; // 1/8 celda/frame -> alinea cada 8 frames
 const GHOST_SPEED = 0.1;    // 1/10 celda/frame
+const CLYDE_SHY_RANGE = 8;  // celdas de distancia para que Clyde huya
 
 // Crea una partida nueva. Copia MAZE (pristino) a game.grid para poder comer
 // dots sin destruir el original, y reiniciar.
@@ -114,35 +115,79 @@ function movePacman( game ) {
   wrapTunnel( p, width );
 }
 
-function decideGhost( game, g ) {
-  const grid = game.grid;
-  const p = game.pacman;
+// Distancia euclidea entre dos puntos (en celdas).
+function euclidDist( ax, ay, bx, by ) {
+  const dx = ax - bx;
+  const dy = ay - by;
+  return Math.sqrt( dx * dx + dy * dy );
+}
 
-  const options = Object.keys( DIRS ).filter(
+// Celda n celdas por delante de Pac-Man segun su direccion actual
+// (sin el "bug del up": se usa siempre la direccion actual).
+function cellAhead( p, n ) {
+  const d = DIRS[ p.dir ];
+  return { x: Math.round( p.x ) + d.x * n, y: Math.round( p.y ) + d.y * n };
+}
+
+// Esquina a la que se retira Clyde cuando Pac-Man esta demasiado cerca.
+const CLYDE_CORNER = { x: 1, y: 29 };
+
+// Punto de mira de cada fantasma segun su personalidad, en celdas:
+//   blinky -> celda de Pac-Man (persecucion directa).
+//   pinky  -> 4 celdas por delante de Pac-Man (emboscada).
+//   inky   -> punto 2 celdas delante de Pac-Man, duplicado respecto a
+//             Blinky (flanqueo).
+//   clyde  -> su esquina si esta a <= 8 celdas; si no, persigue.
+function ghostTarget( game, g ) {
+  const p = game.pacman;
+  const pc = { x: Math.round( p.x ), y: Math.round( p.y ) };
+
+  switch ( g.kind ) {
+    case 'blinky':
+      return pc;
+    case 'pinky':
+      return cellAhead( p, 4 );
+    case 'inky': {
+      const pivot = cellAhead( p, 2 );
+      const blinky = game.ghosts[ 0 ]; // blinky: primera entrada de GHOST_STARTS
+      return {
+        x: pivot.x * 2 - Math.round( blinky.x ),
+        y: pivot.y * 2 - Math.round( blinky.y ),
+      };
+    }
+    case 'clyde':
+      if ( euclidDist( g.x, g.y, pc.x, pc.y ) <= CLYDE_SHY_RANGE ) return CLYDE_CORNER;
+      return pc;
+  }
+}
+
+// El arcade resuelve el empate prefiriendo up > left > down > right.
+const TIE_BREAK = [ 'up', 'left', 'down', 'right' ];
+
+// Elige entre las direcciones validas sin reversa de 180 (salvo callejon
+// sin salida) la que menor distancia euclidea deje al objetivo.
+function pickDir( grid, g, target ) {
+  const valid = TIE_BREAK.filter(
     ( dir ) => dir !== OPPOSITE[ g.dir ] && canMove( grid, g.x, g.y, dir, g )
   );
-  // Sin salida (callejon): permitir el giro de 180.
-  const choices = options.length ? options : [ '' + OPPOSITE[ g.dir ] ];
+  // Sin salida (callejon): la reversa de 180 es la única opcion.
+  const choices = valid.length ? valid : [ OPPOSITE[ g.dir ] ];
 
-  if ( g.kind === 'hunter' ) {
-    const px = Math.round( p.x );
-    const py = Math.round( p.y );
-    let best = choices[ 0 ];
-    let bestDist = Infinity;
-    for ( const dir of choices ) {
-      const d = DIRS[ dir ];
-      const nx = g.x + d.x;
-      const ny = g.y + d.y;
-      const dist = Math.abs( nx - px ) + Math.abs( ny - py );
-      if ( dist < bestDist ) {
-        bestDist = dist;
-        best = dir;
-      }
+  let best = choices[ 0 ];
+  let bestDist = Infinity;
+  for ( const dir of choices ) {
+    const d = DIRS[ dir ];
+    const dist = euclidDist( g.x + d.x, g.y + d.y, target.x, target.y );
+    if ( dist < bestDist ) {
+      bestDist = dist;
+      best = dir;
     }
-    g.dir = best;
-  } else {
-    g.dir = choices[ Math.floor( Math.random() * choices.length ) ];
   }
+  return best;
+}
+
+function decideGhost( game, g ) {
+  g.dir = pickDir( game.grid, g, ghostTarget( game, g ) );
 }
 
 // Columna (x) de la puerta que mas cerca este de x. Escanea el grid,
