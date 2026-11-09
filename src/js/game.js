@@ -42,6 +42,9 @@ function createGame() {
       dir: 'up',
       speed: GHOST_SPEED,
       kind: g.kind,
+      releaseDelay: g.releaseDelay,
+      released: false,
+      exited: false,
     } ) ),
   };
 }
@@ -52,13 +55,14 @@ function aligned( v ) {
 
 // Una celda es muro para el actor dado?
 //   pacman: bloqueado por pared (1) y puerta (3)
-//   ghost:  bloqueado solo por pared (1)
+//   ghost:  bloqueado por pared (1); la puerta (3) solo deja pasar a un
+//           fantasma que aun no ha salido de la pen (no puede reentrar)
 function isWall( grid, x, y, actor ) {
   if ( y < 0 || y >= grid.length ) return true;
   if ( x < 0 || x >= grid[ 0 ].length ) return true;
   const v = grid[ y ][ x ];
   if ( v === 1 ) return true;
-  if ( v === 3 && actor === 'pacman' ) return true;
+  if ( v === 3 ) return actor === 'pacman' || actor.exited;
   return false;
 }
 
@@ -115,7 +119,7 @@ function decideGhost( game, g ) {
   const p = game.pacman;
 
   const options = Object.keys( DIRS ).filter(
-    ( dir ) => dir !== OPPOSITE[ g.dir ] && canMove( grid, g.x, g.y, dir, 'ghost' )
+    ( dir ) => dir !== OPPOSITE[ g.dir ] && canMove( grid, g.x, g.y, dir, g )
   );
   // Sin salida (callejon): permitir el giro de 180.
   const choices = options.length ? options : [ '' + OPPOSITE[ g.dir ] ];
@@ -141,15 +145,68 @@ function decideGhost( game, g ) {
   }
 }
 
+// Columna (x) de la puerta que mas cerca este de x. Escanea el grid,
+// sin magic numbers: la puerta es cualquier celda con valor 3.
+function nearestDoorCol( grid, x ) {
+  let best = null;
+  let bestDist = Infinity;
+  for ( let y = 0; y < grid.length; y++ ) {
+    for ( let c = 0; c < grid[ 0 ].length; c++ ) {
+      if ( grid[ y ][ c ] !== 3 ) continue;
+      const d = Math.abs( c - x );
+      if ( d < bestDist ) {
+        bestDist = d;
+        best = c;
+      }
+    }
+  }
+  return best;
+}
+
+// Marcha de salida de la pen: hacia la columna de puerta mas cercana
+// por la fila actual y luego hacia arriba; al pisar la fila 11 queda fuera.
+function exitPen( game, g ) {
+  const grid = game.grid;
+
+  if ( aligned( g.x ) && aligned( g.y ) ) {
+    g.x = Math.round( g.x );
+    g.y = Math.round( g.y );
+    if ( g.y === 11 ) {
+      g.exited = true;
+      return; // no avanza mas este frame
+    }
+    const col = nearestDoorCol( grid, g.x );
+    if ( g.x < col ) g.dir = 'right';
+    else if ( g.x > col ) g.dir = 'left';
+    else g.dir = 'up';
+  }
+
+  const d = DIRS[ g.dir ];
+  g.x += d.x * g.speed;
+  g.y += d.y * g.speed;
+}
+
 function moveGhost( game, g ) {
   const grid = game.grid;
   const width = grid[ 0 ].length;
+
+  // Aun en la pen: cuenta atras de salida en frames de juego.
+  if ( !g.released ) {
+    if ( g.releaseDelay > 0 ) g.releaseDelay--;
+    if ( g.releaseDelay === 0 ) g.released = true;
+    return;
+  }
+  // Liberado sin salir: marcha determinista hacia la puerta.
+  if ( !g.exited ) {
+    exitPen( game, g );
+    return;
+  }
 
   if ( aligned( g.x ) && aligned( g.y ) ) {
     g.x = Math.round( g.x );
     g.y = Math.round( g.y );
     decideGhost( game, g );
-    if ( !canMove( grid, g.x, g.y, g.dir, 'ghost' ) ) return;
+    if ( !canMove( grid, g.x, g.y, g.dir, g ) ) return;
   }
 
   const d = DIRS[ g.dir ];
@@ -168,6 +225,9 @@ function resetPositions( game ) {
     g.x = GHOST_STARTS[ i ].x;
     g.y = GHOST_STARTS[ i ].y;
     g.dir = 'up';
+    g.releaseDelay = GHOST_STARTS[ i ].releaseDelay;
+    g.released = false;
+    g.exited = false;
   } );
 }
 
