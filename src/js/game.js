@@ -12,6 +12,9 @@ const OPPOSITE = { left: 'right', right: 'left', up: 'down', down: 'up' };
 
 const PACMAN_SPEED = 0.125; // 1/8 celda/frame -> alinea cada 8 frames
 const GHOST_SPEED = 0.1;    // 1/10 celda/frame
+const BLINKY_SPEED = 0.11;  // Blinky corre algo mas que el resto
+const ELROY_DOTS = 30;      // dots restantes para el turbo de Blinky
+const ELROY_SPEED = 0.125;  // par con Pac-Man en el tramo final
 const CLYDE_SHY_RANGE = 8;  // celdas de distancia para que Clyde huya
 
 // Crea una partida nueva. Copia MAZE (pristino) a game.grid para poder comer
@@ -231,9 +234,18 @@ function exitPen( game, g ) {
   g.y += d.y * g.speed;
 }
 
+// Cruise Elroy simplificado: Blinky acelera en el tramo final del nivel.
+function ghostSpeed( game, g ) {
+  if ( g.kind === 'blinky' ) {
+    return game.dotsRemaining <= ELROY_DOTS ? ELROY_SPEED : BLINKY_SPEED;
+  }
+  return GHOST_SPEED;
+}
+
 function moveGhost( game, g ) {
   const grid = game.grid;
   const width = grid[ 0 ].length;
+  g.speed = ghostSpeed( game, g ); // recalculada en cada frame
 
   // Aun en la pen: cuenta atras de salida en frames de juego.
   if ( !g.released ) {
