@@ -12,9 +12,9 @@ const OPPOSITE = { left: 'right', right: 'left', up: 'down', down: 'up' };
 
 const PACMAN_SPEED = 0.125; // 1/8 celda/frame -> alinea cada 8 frames
 const GHOST_SPEED = 0.1;    // 1/10 celda/frame
-const BLINKY_SPEED = 0.11;  // Blinky corre algo mas que el resto
+const BLINKY_SPEED = 1 / 9; // 1/9 celda/frame -> alinea cada 9 frames
 const ELROY_DOTS = 30;      // dots restantes para el turbo de Blinky
-const ELROY_SPEED = 0.125;  // par con Pac-Man en el tramo final
+const ELROY_SPEED = 0.125;  // 1/8 celda/frame, par con Pac-Man en el tramo final
 const CLYDE_SHY_RANGE = 8;  // celdas de distancia para que Clyde huya
 
 // Crea una partida nueva. Copia MAZE (pristino) a game.grid para poder comer
