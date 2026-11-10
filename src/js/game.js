@@ -162,6 +162,23 @@ function tickFright( game ) {
   }
 }
 
+// Come un fantasma asustado: puntos 200/400/800/1600 segun el orden en el
+// fright y teleport a su celda de la pen; saldra por la puerta con la
+// lógica ya existente tras un pequeño retardo (~1 s).
+function eatGhost( game, i ) {
+  const g = game.ghosts[ i ];
+  game.score += GHOST_POINTS[ Math.min( game.pelletChain, GHOST_POINTS.length - 1 ) ];
+  game.pelletChain++;
+  const start = GHOST_STARTS[ i ];
+  g.x = start.x;
+  g.y = start.y;
+  g.dir = 'up';
+  g.released = false;
+  g.exited = false;
+  g.releaseDelay = EATEN_RELEASE_DELAY;
+  g.frightened = false;
+}
+
 // Distancia euclidea entre dos puntos (en celdas).
 function euclidDist( ax, ay, bx, by ) {
   const dx = ax - bx;
@@ -330,12 +347,14 @@ function moveGhost( game, g ) {
   wrapTunnel( g, width );
 }
 
+// Perder vida reposiciona a todos y cancela el fright si habia uno abierto.
 function resetPositions( game ) {
   const p = game.pacman;
   p.x = PACMAN_START.x;
   p.y = PACMAN_START.y;
   p.dir = 'left';
   p.nextDir = null;
+  game.frightTimer = 0;
   game.ghosts.forEach( ( g, i ) => {
     g.x = GHOST_STARTS[ i ].x;
     g.y = GHOST_STARTS[ i ].y;
@@ -345,6 +364,7 @@ function resetPositions( game ) {
     g.releaseDelay = RESET_RELEASE_DELAYS[ i ];
     g.released = startsOnMap( g );
     g.exited = startsOnMap( g );
+    g.frightened = false;
   } );
 }
 
@@ -357,16 +377,20 @@ function update( game ) {
   tickFright( game );
   game.ghosts.forEach( ( g ) => moveGhost( game, g ) );
 
-  for ( const g of game.ghosts ) {
-    if ( collides( game.pacman, g ) ) {
-      game.lives--;
-      if ( game.lives <= 0 ) {
-        game.state = 'lost';
-        return;
-      }
-      resetPositions( game );
-      break;
+  for ( let i = 0; i < game.ghosts.length; i++ ) {
+    const g = game.ghosts[ i ];
+    if ( !collides( game.pacman, g ) ) continue;
+    if ( g.frightened ) {
+      eatGhost( game, i ); // sin break: pueden caer dos en el mismo frame
+      continue;
     }
+    game.lives--;
+    if ( game.lives <= 0 ) {
+      game.state = 'lost';
+      return;
+    }
+    resetPositions( game );
+    break;
   }
 
   if ( game.dotsRemaining <= 0 ) game.state = 'won';
