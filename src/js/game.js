@@ -47,8 +47,9 @@ function createGame() {
       speed: GHOST_SPEED,
       kind: g.kind,
       releaseDelay: g.releaseDelay,
-      released: false,
-      exited: false,
+      // blinky nace activo sobre la puerta; el resto espera en la pen
+      released: g.kind === 'blinky',
+      exited: g.kind === 'blinky',
     } ) ),
   };
 }
