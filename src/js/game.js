@@ -1,6 +1,6 @@
 // game.js
 // Estado y reglas. Depende de globals de maze.js: MAZE, TUNNEL_ROW,
-// PACMAN_START, GHOST_STARTS.
+// PACMAN_START, GHOST_STARTS, RESET_RELEASE_DELAYS.
 
 const DIRS = {
   left: { x: -1, y: 0 },
@@ -16,6 +16,11 @@ const BLINKY_SPEED = 1 / 9; // 1/9 celda/frame -> alinea cada 9 frames
 const ELROY_DOTS = 30;      // dots restantes para el turbo de Blinky
 const ELROY_SPEED = 0.125;  // 1/8 celda/frame, par con Pac-Man en el tramo final
 const CLYDE_SHY_RANGE = 8;  // celdas de distancia para que Clyde huya
+
+// Un fantasma nace activo en el mapa, sobre la puerta del pen: solo blinky.
+function startsOnMap( g ) {
+  return g.kind === 'blinky';
+}
 
 // Crea una partida nueva. Copia MAZE (pristino) a game.grid para poder comer
 // dots sin destruir el original, y reiniciar.
@@ -47,8 +52,9 @@ function createGame() {
       speed: GHOST_SPEED,
       kind: g.kind,
       releaseDelay: g.releaseDelay,
-      released: false,
-      exited: false,
+      // blinky nace activo sobre la puerta; el resto espera en la pen
+      released: startsOnMap( g ),
+      exited: startsOnMap( g ),
     } ) ),
   };
 }
@@ -282,9 +288,11 @@ function resetPositions( game ) {
     g.x = GHOST_STARTS[ i ].x;
     g.y = GHOST_STARTS[ i ].y;
     g.dir = 'up';
-    g.releaseDelay = GHOST_STARTS[ i ].releaseDelay;
-    g.released = false;
-    g.exited = false;
+    // blinky vuelve al mapa activo; en la pen el escalonado es el corto,
+    // para que nadie quede congelado tras perder una vida.
+    g.releaseDelay = RESET_RELEASE_DELAYS[ i ];
+    g.released = startsOnMap( g );
+    g.exited = startsOnMap( g );
   } );
 }
 
