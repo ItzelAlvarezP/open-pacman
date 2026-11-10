@@ -17,6 +17,15 @@ const ELROY_DOTS = 30;      // dots restantes para el turbo de Blinky
 const ELROY_SPEED = 0.125;  // 1/8 celda/frame, par con Pac-Man en el tramo final
 const CLYDE_SHY_RANGE = 8;  // celdas de distancia para que Clyde huya
 
+// Pildora de poder (tile 4) y ventana frightened global.
+const PELLET_TILE = 4;
+const PELLET_POINTS = 50;
+const FRIGHT_FRAMES = 360;       // 6 s a 60 fps
+const FRIGHT_BLINK_FRAMES = 120; // los ultimos 2 s parpadea el cuerpo
+const FRIGHT_GHOST_SPEED = 0.05; // 1/20 celda/frame
+const EATEN_RELEASE_DELAY = 60;  // frames en la pen tras ser comido
+const GHOST_POINTS = [200, 400, 800, 1600]; // cadena dentro del mismo fright
+
 // Un fantasma nace activo en el mapa, sobre la puerta del pen: solo blinky.
 function startsOnMap( g ) {
   return g.kind === 'blinky';
@@ -37,6 +46,8 @@ function createGame() {
     score: 0,
     lives: 3,
     dotsRemaining: dots,
+    frightTimer: 0, // frames de frightened restantes; 0 = nadie asustado
+    pelletChain: 0, // fantasmas comidos en el fright actual
     grid,
     pacman: {
       x: PACMAN_START.x,
@@ -55,6 +66,7 @@ function createGame() {
       // blinky nace activo sobre la puerta; el resto espera en la pen
       released: startsOnMap( g ),
       exited: startsOnMap( g ),
+      frightened: false,
     } ) ),
   };
 }
@@ -108,11 +120,16 @@ function movePacman( game ) {
       p.dir = p.nextDir;
       p.nextDir = null;
     }
-    // Comer dot.
+    // Comer dot o pildora de poder.
     if ( grid[ p.y ][ p.x ] === 2 ) {
       grid[ p.y ][ p.x ] = 0;
       game.score += 10;
       game.dotsRemaining--;
+    } else if ( grid[ p.y ][ p.x ] === PELLET_TILE ) {
+      grid[ p.y ][ p.x ] = 0;
+      game.score += PELLET_POINTS;
+      game.dotsRemaining--;
+      triggerFright( game );
     }
     // Si no puede seguir, se detiene en la celda.
     if ( !canMove( grid, p.x, p.y, p.dir, 'pacman' ) ) return;
@@ -122,6 +139,27 @@ function movePacman( game ) {
   p.x += d.x * p.speed;
   p.y += d.y * p.speed;
   wrapTunnel( p, width );
+}
+
+// Come la pildora: relanza la ventana fright, asusta a los 4 y pone en
+// marcha la cadena de puntos. Media vuelta a los que ya estan en el mapa.
+function triggerFright( game ) {
+  game.frightTimer = FRIGHT_FRAMES;
+  game.pelletChain = 0;
+  game.ghosts.forEach( ( g ) => {
+    g.frightened = true;
+    if ( g.exited ) g.dir = OPPOSITE[ g.dir ];
+  } );
+}
+
+// Tick del fright, antes de mover fantasmas y resolver colisiones: si el
+// timer se agota nadie queda asustado este mismo frame.
+function tickFright( game ) {
+  if ( game.frightTimer <= 0 ) return;
+  game.frightTimer--;
+  if ( game.frightTimer === 0 ) {
+    game.ghosts.forEach( ( g ) => ( g.frightened = false ) );
+  }
 }
 
 // Distancia euclidea entre dos puntos (en celdas).
@@ -302,6 +340,7 @@ function collides( a, b ) {
 
 function update( game ) {
   movePacman( game );
+  tickFright( game );
   game.ghosts.forEach( ( g ) => moveGhost( game, g ) );
 
   for ( const g of game.ghosts ) {
