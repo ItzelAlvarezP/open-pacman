@@ -79,6 +79,22 @@ function drawDots( ctx, grid ) {
   }
 }
 
+// Píldoras de poder (tile 4): círculo grande sobre la misma paleta de los dots.
+// Parpadean siempre, como las del arcade; frame va incrementado por el bucle.
+function drawPellets( ctx, grid, frame ) {
+  if ( Math.floor( frame / 10 ) % 2 ) return;
+  ctx.fillStyle = DOT_COLOR;
+  for ( let y = 0; y < grid.length; y++ ) {
+    for ( let x = 0; x < grid[ 0 ].length; x++ ) {
+      if ( grid[ y ][ x ] !== 4 ) continue;
+      const { cx, cy } = cellCenter( x, y );
+      ctx.beginPath();
+      ctx.arc( cx, cy, 5, 0, Math.PI * 2 );
+      ctx.fill();
+    }
+  }
+}
+
 function drawPacman( ctx, p, frame ) {
   const { cx, cy } = cellCenter( p.x, p.y );
   let rot = 0;
@@ -146,6 +162,16 @@ function drawHUD( ctx, game, W ) {
 
 const GHOST_COLORS = { blinky: '#ff0000', pinky: '#ffb8ff', inky: '#00ffff', clyde: '#ffb852' };
 
+// Frightened: cuerpo azul; en el tramo final alterna blanco (flash del arcade).
+// Las constantes de fright viven en game.js (const compartida entre scripts).
+const FRIGHT_COLOR = '#2121de';
+
+function ghostColor( game, g, frame ) {
+  if ( !g.frightened ) return GHOST_COLORS[ g.kind ] || '#ff0000';
+  if ( game.frightTimer <= FRIGHT_BLINK_FRAMES && Math.floor( frame / 10 ) % 2 === 0 ) return '#fff';
+  return FRIGHT_COLOR;
+}
+
 function draw( ctx, game, frame ) {
   const grid = game.grid;
   const W = grid[ 0 ].length;
@@ -157,8 +183,9 @@ function draw( ctx, game, frame ) {
   drawWalls( ctx, grid );
   drawDoor( ctx, grid );
   drawDots( ctx, grid );
+  drawPellets( ctx, grid, frame );
   drawPacman( ctx, game.pacman, frame );
-  game.ghosts.forEach( ( g ) => drawGhost( ctx, g, GHOST_COLORS[ g.kind ] || '#ff0000' ) );
+  game.ghosts.forEach( ( g ) => drawGhost( ctx, g, ghostColor( game, g, frame ) ) );
   drawHUD( ctx, game, W );
 }
 

@@ -17,6 +17,15 @@ const ELROY_DOTS = 30;      // dots restantes para el turbo de Blinky
 const ELROY_SPEED = 0.125;  // 1/8 celda/frame, par con Pac-Man en el tramo final
 const CLYDE_SHY_RANGE = 8;  // celdas de distancia para que Clyde huya
 
+// Pildora de poder (tile 4) y ventana frightened global.
+const PELLET_TILE = 4;
+const PELLET_POINTS = 50;
+const FRIGHT_FRAMES = 360;       // 6 s a 60 fps
+const FRIGHT_BLINK_FRAMES = 120; // los ultimos 2 s parpadea el cuerpo
+const FRIGHT_GHOST_SPEED = 0.05; // 1/20 celda/frame
+const EATEN_RELEASE_DELAY = 60;  // frames en la pen tras ser comido
+const GHOST_POINTS = [200, 400, 800, 1600]; // cadena dentro del mismo fright
+
 // Un fantasma nace activo en el mapa, sobre la puerta del pen: solo blinky.
 function startsOnMap( g ) {
   return g.kind === 'blinky';
@@ -37,6 +46,8 @@ function createGame() {
     score: 0,
     lives: 3,
     dotsRemaining: dots,
+    frightTimer: 0, // frames de frightened restantes; 0 = nadie asustado
+    pelletChain: 0, // fantasmas comidos en el fright actual
     grid,
     pacman: {
       x: PACMAN_START.x,
@@ -55,6 +66,7 @@ function createGame() {
       // blinky nace activo sobre la puerta; el resto espera en la pen
       released: startsOnMap( g ),
       exited: startsOnMap( g ),
+      frightened: false,
     } ) ),
   };
 }
@@ -108,11 +120,16 @@ function movePacman( game ) {
       p.dir = p.nextDir;
       p.nextDir = null;
     }
-    // Comer dot.
+    // Comer dot o pildora de poder.
     if ( grid[ p.y ][ p.x ] === 2 ) {
       grid[ p.y ][ p.x ] = 0;
       game.score += 10;
       game.dotsRemaining--;
+    } else if ( grid[ p.y ][ p.x ] === PELLET_TILE ) {
+      grid[ p.y ][ p.x ] = 0;
+      game.score += PELLET_POINTS;
+      game.dotsRemaining--;
+      triggerFright( game );
     }
     // Si no puede seguir, se detiene en la celda.
     if ( !canMove( grid, p.x, p.y, p.dir, 'pacman' ) ) return;
@@ -122,6 +139,44 @@ function movePacman( game ) {
   p.x += d.x * p.speed;
   p.y += d.y * p.speed;
   wrapTunnel( p, width );
+}
+
+// Come la pildora: relanza la ventana fright, asusta a los 4 y pone en
+// marcha la cadena de puntos. Media vuelta a los que ya estan en el mapa.
+function triggerFright( game ) {
+  game.frightTimer = FRIGHT_FRAMES;
+  game.pelletChain = 0;
+  game.ghosts.forEach( ( g ) => {
+    g.frightened = true;
+    if ( g.exited ) g.dir = OPPOSITE[ g.dir ];
+  } );
+}
+
+// Tick del fright, antes de mover fantasmas y resolver colisiones: si el
+// timer se agota nadie queda asustado este mismo frame.
+function tickFright( game ) {
+  if ( game.frightTimer <= 0 ) return;
+  game.frightTimer--;
+  if ( game.frightTimer === 0 ) {
+    game.ghosts.forEach( ( g ) => ( g.frightened = false ) );
+  }
+}
+
+// Come un fantasma asustado: puntos 200/400/800/1600 segun el orden en el
+// fright y teleport a su celda de la pen; saldra por la puerta con la
+// lógica ya existente tras un pequeño retardo (~1 s).
+function eatGhost( game, i ) {
+  const g = game.ghosts[ i ];
+  game.score += GHOST_POINTS[ Math.min( game.pelletChain, GHOST_POINTS.length - 1 ) ];
+  game.pelletChain++;
+  const start = GHOST_STARTS[ i ];
+  g.x = start.x;
+  g.y = start.y;
+  g.dir = 'up';
+  g.released = false;
+  g.exited = false;
+  g.releaseDelay = EATEN_RELEASE_DELAY;
+  g.frightened = false;
 }
 
 // Distancia euclidea entre dos puntos (en celdas).
@@ -173,14 +228,19 @@ function ghostTarget( game, g ) {
 // El arcade resuelve el empate prefiriendo up > left > down > right.
 const TIE_BREAK = [ 'up', 'left', 'down', 'right' ];
 
-// Elige entre las direcciones validas sin reversa de 180 (salvo callejon
-// sin salida) la que menor distancia euclidea deje al objetivo.
-function pickDir( grid, g, target ) {
+// Direcciones validas para un fantasma: sin reversa de 180 (salvo callejon
+// sin salida). La usan la decision normal y la aleatoria de fright.
+function ghostChoices( grid, g ) {
   const valid = TIE_BREAK.filter(
     ( dir ) => dir !== OPPOSITE[ g.dir ] && canMove( grid, g.x, g.y, dir, g )
   );
-  // Sin salida (callejon): la reversa de 180 es la única opcion.
-  const choices = valid.length ? valid : [ OPPOSITE[ g.dir ] ];
+  return valid.length ? valid : [ OPPOSITE[ g.dir ] ];
+}
+
+// Elige entre las direcciones validas la que menor distancia euclidea
+// deja al objetivo.
+function pickDir( grid, g, target ) {
+  const choices = ghostChoices( grid, g );
 
   let best = choices[ 0 ];
   let bestDist = Infinity;
@@ -195,7 +255,14 @@ function pickDir( grid, g, target ) {
   return best;
 }
 
+// Asustado: gira al azar entre las mismas opciones (callejon incluido).
+// Normal: la de menor distancia euclidea al objetivo.
 function decideGhost( game, g ) {
+  if ( g.frightened ) {
+    const choices = ghostChoices( game.grid, g );
+    g.dir = choices[ Math.floor( Math.random() * choices.length ) ];
+    return;
+  }
   g.dir = pickDir( game.grid, g, ghostTarget( game, g ) );
 }
 
@@ -241,7 +308,9 @@ function exitPen( game, g ) {
 }
 
 // Cruise Elroy simplificado: Blinky acelera en el tramo final del nivel.
+// El fright manda mientras dure (por encima incluso del Elroy).
 function ghostSpeed( game, g ) {
+  if ( g.frightened ) return FRIGHT_GHOST_SPEED;
   if ( g.kind === 'blinky' ) {
     return game.dotsRemaining <= ELROY_DOTS ? ELROY_SPEED : BLINKY_SPEED;
   }
@@ -278,12 +347,14 @@ function moveGhost( game, g ) {
   wrapTunnel( g, width );
 }
 
+// Perder vida reposiciona a todos y cancela el fright si habia uno abierto.
 function resetPositions( game ) {
   const p = game.pacman;
   p.x = PACMAN_START.x;
   p.y = PACMAN_START.y;
   p.dir = 'left';
   p.nextDir = null;
+  game.frightTimer = 0;
   game.ghosts.forEach( ( g, i ) => {
     g.x = GHOST_STARTS[ i ].x;
     g.y = GHOST_STARTS[ i ].y;
@@ -293,6 +364,7 @@ function resetPositions( game ) {
     g.releaseDelay = RESET_RELEASE_DELAYS[ i ];
     g.released = startsOnMap( g );
     g.exited = startsOnMap( g );
+    g.frightened = false;
   } );
 }
 
@@ -302,18 +374,23 @@ function collides( a, b ) {
 
 function update( game ) {
   movePacman( game );
+  tickFright( game );
   game.ghosts.forEach( ( g ) => moveGhost( game, g ) );
 
-  for ( const g of game.ghosts ) {
-    if ( collides( game.pacman, g ) ) {
-      game.lives--;
-      if ( game.lives <= 0 ) {
-        game.state = 'lost';
-        return;
-      }
-      resetPositions( game );
-      break;
+  for ( let i = 0; i < game.ghosts.length; i++ ) {
+    const g = game.ghosts[ i ];
+    if ( !collides( game.pacman, g ) ) continue;
+    if ( g.frightened ) {
+      eatGhost( game, i ); // sin break: pueden caer dos en el mismo frame
+      continue;
     }
+    game.lives--;
+    if ( game.lives <= 0 ) {
+      game.state = 'lost';
+      return;
+    }
+    resetPositions( game );
+    break;
   }
 
   if ( game.dotsRemaining <= 0 ) game.state = 'won';
