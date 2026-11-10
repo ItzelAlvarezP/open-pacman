@@ -211,14 +211,19 @@ function ghostTarget( game, g ) {
 // El arcade resuelve el empate prefiriendo up > left > down > right.
 const TIE_BREAK = [ 'up', 'left', 'down', 'right' ];
 
-// Elige entre las direcciones validas sin reversa de 180 (salvo callejon
-// sin salida) la que menor distancia euclidea deje al objetivo.
-function pickDir( grid, g, target ) {
+// Direcciones validas para un fantasma: sin reversa de 180 (salvo callejon
+// sin salida). La usan la decision normal y la aleatoria de fright.
+function ghostChoices( grid, g ) {
   const valid = TIE_BREAK.filter(
     ( dir ) => dir !== OPPOSITE[ g.dir ] && canMove( grid, g.x, g.y, dir, g )
   );
-  // Sin salida (callejon): la reversa de 180 es la única opcion.
-  const choices = valid.length ? valid : [ OPPOSITE[ g.dir ] ];
+  return valid.length ? valid : [ OPPOSITE[ g.dir ] ];
+}
+
+// Elige entre las direcciones validas la que menor distancia euclidea
+// deja al objetivo.
+function pickDir( grid, g, target ) {
+  const choices = ghostChoices( grid, g );
 
   let best = choices[ 0 ];
   let bestDist = Infinity;
@@ -233,7 +238,14 @@ function pickDir( grid, g, target ) {
   return best;
 }
 
+// Asustado: gira al azar entre las mismas opciones (callejon incluido).
+// Normal: la de menor distancia euclidea al objetivo.
 function decideGhost( game, g ) {
+  if ( g.frightened ) {
+    const choices = ghostChoices( game.grid, g );
+    g.dir = choices[ Math.floor( Math.random() * choices.length ) ];
+    return;
+  }
   g.dir = pickDir( game.grid, g, ghostTarget( game, g ) );
 }
 
@@ -279,7 +291,9 @@ function exitPen( game, g ) {
 }
 
 // Cruise Elroy simplificado: Blinky acelera en el tramo final del nivel.
+// El fright manda mientras dure (por encima incluso del Elroy).
 function ghostSpeed( game, g ) {
+  if ( g.frightened ) return FRIGHT_GHOST_SPEED;
   if ( g.kind === 'blinky' ) {
     return game.dotsRemaining <= ELROY_DOTS ? ELROY_SPEED : BLINKY_SPEED;
   }
