@@ -52,13 +52,17 @@ const MAZE = MAZE_STR.map( ( row ) => row.split( '' ).map( parseTile ) );
 const TUNNEL_ROW = 14;
 const PACMAN_START = { x: 13, y: 23 };
 const GHOST_STARTS = [
-  { x: 13, y: 14, kind: 'blinky', releaseDelay: 0 },
+  { x: 13, y: 11, kind: 'blinky', releaseDelay: 0 }, // blinky nace en el mapa, sobre la puerta
   { x: 14, y: 14, kind: 'pinky', releaseDelay: 120 },
   { x: 11, y: 14, kind: 'inky', releaseDelay: 300 },
   { x: 16, y: 14, kind: 'clyde', releaseDelay: 480 },
 ];
 
+// Delays al reaparecer tras perder vida (mismo orden que GHOST_STARTS).
+const RESET_RELEASE_DELAYS = [ 0, 60, 120, 180 ];
+
 window.MAZE = MAZE;
 window.TUNNEL_ROW = TUNNEL_ROW;
 window.PACMAN_START = PACMAN_START;
 window.GHOST_STARTS = GHOST_STARTS;
+window.RESET_RELEASE_DELAYS = RESET_RELEASE_DELAYS;
